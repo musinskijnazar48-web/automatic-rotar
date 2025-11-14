@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Мой Мессенджер с Google Auth и Поиском</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    
+    <!-- ПОДКЛЮЧЕНИЕ БИБЛИОТЕК FIREBASE -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+
+    <style>
+        :root {
+            --bg-dark: #0a0a0a;
+            --bg-container: #1c1c1e;
+            --color-primary: #4cd964; /* Telegram green */
+            --color-secondary: #007aff;
+            --color-text: #f5f5f7;
+            --color-input: #4c4c4e;
+        }
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background: var(--bg-dark); 
+            color: var(--color-text); 
+            padding: 0; 
+            margin: 0; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            min-height: 100vh; 
+            font-size: 14px;
+        }
+        .app-container { 
+            width: 100%; 
+            max-width: 800px; 
+            height: 90vh; 
+            background: var(--bg-container); 
+            border-radius: 12px; 
+            box-shadow: 0 5px 25px rgba(0, 0, 0, 0.5); 
+            display: flex; 
+            overflow: hidden; 
+        }
+        
+        /* 1. СТРАНИЦА ВХОДА */
+        #loginScreen { 
+            position: fixed; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%; 
+            background: var(--bg-dark); 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            z-index: 100; 
+        }
+        #loginBox { 
+            background: #2c2c2e; 
+            padding: 40px; 
+            border-radius: 10px; 
+            text-align: center; 
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.4);
+        }
+        #googleSignInBtn { 
+            padding: 12px 25px; 
+            background: #db4437; 
+            color: white; 
+            border: none; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            font-size: 1.1em; 
+            transition: background 0.2s;
+        }
+        #googleSignInBtn:hover { background: #c33d31; }
+
+        #usernameSetup { margin-top: 20px; display: none; }
+        #usernameSetup input { 
+            padding: 10px; 
+            margin: 10px 0; 
+            width: 250px; 
+            border-radius: 5px; 
+            border: 1px solid #4c4c4e; 
+            background: var(--color-input); 
+            color: white; 
+        }
+        #usernameSetup button { 
+            background: var(--color-primary); 
+            color: white; 
+            border: none; 
+            padding: 10px 20px; 
+            border-radius: 5px; 
+            cursor: pointer;
+        }
+
+
+        /* 2. ЛЕВЫЙ САЙДБАР (СПИСОК ЧАТОВ) */
+        #sidebar { 
+            width: 35%; 
+            max-width: 300px; 
+            background: #2c2c2e; 
+            border-right: 1px solid #3c3c3e; 
+            display: flex; 
+            flex-direction: column; 
+        }
+        #searchBox { padding: 10px; border-bottom: 1px solid #3c3c3e; }
+        #searchBox input { 
+            width: 100%; 
+            padding: 10px; 
+            border-radius: 20px; 
+            border: none; 
+            background: var(--color-input); 
+            color: white; 
+            font-size: 1em;
+        }
+        #contactList { overflow-y: auto; flex-grow: 1; }
+        .contact-item { 
+            padding: 12px 15px; 
+            cursor: pointer; 
+            border-bottom: 1px solid #3c3c3e; 
+            transition: background 0.2s; 
+            display: flex; 
+            align-items: center; 
+        }
+        .contact-item:hover, .contact-item.active { background: #3c3c3e; }
+        .contact-item-info { flex-grow: 1; }
+        .contact-item-name { font-weight: bold; font-size: 1.1em; }
+        .contact-item-username { font-size: 0.9em; color: #8e8e93; }
+        .logout-btn { 
+            padding: 10px; 
+            text-align: center; 
+            border-top: 1px solid #3c3c3e; 
+            cursor: pointer; 
+            color: #db4437; 
+            font-size: 1.1em;
+        }
+
+
+        /* 3. ПРАВЫЙ ЧАТ (ОСНОВНОЕ ОКНО) */
+        #chatWindow { width: 65%; display: flex; flex-direction: column; }
+        .chat-header { 
+            padding: 15px; 
+            background: #2c2c2e; 
+            border-bottom: 1px solid #3c3c3e; 
+            color: white; 
+            text-align: left; 
+            font-size: 1.2em; 
+            font-weight: bold; 
+        }
+        #messageArea { 
+            flex-grow: 1; 
+            padding: 15px; 
+            overflow-y: auto; 
+            display: flex; 
+            flex-direction: column; 
+            gap: 10px; 
+        }
+        .message { 
+            padding: 10px 15px; 
+            border-radius: 15px; 
+            max-width: 80%; 
+            line-height: 1.4; 
+            word-wrap: break-word; /* Важно для длинных сообщений */
+        }
+        .msg-user { 
+            background: var(--color-primary); 
+            color: white; 
+            align-self: flex-end; 
+            border-bottom-right-radius: 2px; 
+        }
+        .msg-other { 
+            background: #3c3c3e; 
+            color: white; 
+            align-self: flex-start; 
+            border-bottom-left-radius: 2px; 
+        }
+        .msg-time { 
+            font-size: 0.75em; 
+            opacity: 0.7; 
+            margin-left: 10px; 
+            display: inline-block;
+        }
+        .msg-sender { font-weight: bold; font-size: 0.9em; margin-bottom: 2px; color: #b1b1b1;}
+        .chat-input { display: flex; padding: 15px; background: #2c2c2e; border-top: 1px solid #3c3c3e; }
+        .chat-input input { 
+            flex-grow: 1; 
+            padding: 10px; 
+            border: none; 
+            border-radius: 20px; 
+            background: var(--color-input); 
+            color: white; 
+            margin-right: 10px; 
+        }
+        .chat-input button { 
+            background: var(--color-primary); 
+            color: white; 
+            border: none; 
+            border-radius: 50%; 
+            width: 40px; 
+            height: 40px; 
+            cursor: pointer;
+        }
+
+        /* Адаптивность для мобильных устройств */
+        @media (max-width: 600px) {
+            .app-container {
+                height: 100vh;
+                border-radius: 0;
+                flex-direction: column;
+            }
+            #sidebar {
+                width: 100%;
+                max-width: none;
+                height: 50px; /* Скрываем список контактов, оставляя только поиск */
+                overflow: hidden;
+                border-right: none;
+                border-bottom: 1px solid #3c3c3e;
+            }
+            #chatWindow {
+                width: 100%;
+            }
+            /* На мобильных устройствах отображаем поиск в модальном окне или временно скрываем контакты */
+            #contactList { display: none; }
+            #searchBox { padding: 10px 15px; border-bottom: none; }
+            .logout-btn { display: none; }
+        }
+    </style>
+</head>
+<body>
+    
+    <!-- ЭКРАН ВХОДА/РЕГИСТРАЦИИ -->
+    <div id="loginScreen">
+        <div id="loginBox">
+            <h2><i class="fab fa-telegram-plane"></i> Мой Мессенджер</h2>
+            <p>Для начала войдите через Google:</p>
+            <button id="googleSignInBtn" onclick="signInWithGoogle()"><i class="fab fa-google"></i> Войти через Google</button>
+            
+            <div id="usernameSetup">
+                <p>Выберите имя пользователя (как в TG):</p>
+                <input type="text" id="usernameSetupInput" placeholder="@username (только латиница, без пробелов)">
+                <button onclick="saveUsername()"><i class="fas fa-save"></i> Сохранить</button>
+                <div id="usernameError" style="color: #db4437; margin-top: 5px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ОСНОВНОЙ КОНТЕЙНЕР МЕССЕНДЖЕРА -->
+    <div class="app-container" id="chatApp" style="display:none;">
+        
+        <!-- ЛЕВЫЙ САЙДБАР -->
+        <div id="sidebar">
+            <div id="searchBox">
+                <input type="text" id="searchInput" placeholder="Поиск @username..." oninput="searchUsers(this.value)">
+            </div>
+            <div id="contactList">
+                <div class="contact-item" id="globalChatLink" onclick="startNewChat('public_chat', 'Глобальный чат')">
+                    <div class="contact-item-info">
+                        <div class="contact-item-name">Глобальный чат</div>
+                        <div class="contact-item-username">@public</div>
+                    </div>
+                </div>
+                <!-- Здесь будут найденные контакты -->
+            </div>
+             <div class="logout-btn" onclick="logout()">
+                <i class="fas fa-sign-out-alt"></i> Выйти (<span id="myUsernameDisplay"></span>)
+            </div>
+        </div>
+
+        <!-- ПРАВОЕ ОКНО ЧАТА -->
+        <div id="chatWindow">
+            <div class="chat-header" id="chatHeader">Выберите контакт или найдите пользователя</div>
+            <div id="messageArea">
+                <div class="message msg-other">Добро пожаловать! Войдите, чтобы начать общаться.</div>
+            </div>
+            <div class="chat-input" id="chatInputArea" style="display:none;">
+                <input type="text" id="messageInput" placeholder="Напишите сообщение..." onkeydown="handleKeyPress(event)">
+                <button onclick="sendMessage()"><i class="fas fa-paper-plane"></i></button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // ===========================================
+        // 🔑 КОНФИГУРАЦИЯ FIREBASE (ВАШИ КЛЮЧИ)
+        // ===========================================
+        const firebaseConfig = {
+          apiKey: "AIzaSyBFBZLS7W9uBqpNItQUeCSYJ2IRG7G5UiA",
+          authDomain: "chat-ca735.firebaseapp.com",
+          databaseURL: "https://chat-ca735-default-rtdb.firebaseio.com",
+          projectId: "chat-ca735",
+          storageBucket: "chat-ca735.firebasestorage.app",
+          messagingSenderId: "407446630782",
+          appId: "1:407446630782:web:5d9b66c3e8ff051bebc32f",
+          measurementId: "G-DJ4K3BB9ZE"
+        };
+        
+        // Инициализация Firebase
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+
+        // ===========================================
+        // ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
+        // ===========================================
+        let currentUser = null; 
+        let myUsername = null; 
+        let activeChatId = null; 
+        let unsubscribeFromChat = null; 
+        const contactList = document.getElementById('contactList');
+
+
+        // ===========================================
+        // 🔐 АУТЕНТИФИКАЦИЯ (Google Sign-In)
+        // ===========================================
+
+        function signInWithGoogle() {
+            const provider = new firebase.auth.GoogleAuthProvider();
+            auth.signInWithPopup(provider)
+                .then(result => {
+                    handleAuthSuccess(result.user);
+                })
+                .catch(error => {
+                    console.error("Ошибка Google Auth:", error);
+                    showCustomAlert("Ошибка входа: " + error.message);
+                });
+        }
+
+        function handleAuthSuccess(user) {
+            currentUser = user;
+            
+            // Проверяем, есть ли у пользователя уже @username
+            db.collection('users').doc(user.uid).get()
+                .then(doc => {
+                    if (doc.exists && doc.data().username) {
+                        myUsername = doc.data().username;
+                        initializeChatApp();
+                    } else {
+                        // Пользователь новый, просим выбрать @username
+                        document.getElementById('googleSignInBtn').style.display = 'none';
+                        document.getElementById('usernameSetup').style.display = 'block';
+                    }
+                })
+                .catch(error => {
+                    console.error("Ошибка при проверке пользователя:", error);
+                });
+        }
+        
+        function saveUsername() {
+            const usernameInput = document.getElementById('usernameSetupInput');
+            const errorDiv = document.getElementById('usernameError');
+            let usernameValue = usernameInput.value.trim().toLowerCase();
+            
+            if (usernameValue.startsWith('@')) {
+                 usernameValue = usernameValue.substring(1);
+            }
+
+            // Проверка формата: только латиница, цифры и _, 3+ символа
+            if (!/^[a-z0-9_]{3,}$/.test(usernameValue)) {
+                errorDiv.textContent = 'Некорректный формат. Используйте только латиницу, цифры и "_", от 3 символов.';
+                return;
+            }
+            
+            errorDiv.textContent = 'Проверка доступности...';
+
+            // 1. Проверяем, свободен ли @username
+            db.collection('users').where('username', '==', usernameValue).get()
+                .then(snapshot => {
+                    if (snapshot.empty) {
+                        // 2. Имя свободно, сохраняем профиль
+                        return db.collection('users').doc(currentUser.uid).set({
+                            uid: currentUser.uid,
+                            username: usernameValue,
+                            displayName: currentUser.displayName,
+                            email: currentUser.email,
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                    } else {
+                        throw new Error('Это имя пользователя уже занято.');
+                    }
+                })
+                .then(() => {
+                    myUsername = usernameValue;
+                    errorDiv.textContent = 'Успешно! Вход...';
+                    initializeChatApp();
+                })
+                .catch(error => {
+                    errorDiv.textContent = error.message;
+                    console.error("Ошибка сохранения имени:", error);
+                });
+        }
+        
+        function logout() {
+             auth.signOut().then(() => {
+                window.location.reload();
+             });
+        }
+
+        // Автоматическая проверка статуса входа
+        auth.onAuthStateChanged(user => {
+            if (user) {
+                handleAuthSuccess(user);
+            } else {
+                document.getElementById('chatApp').style.display = 'none';
+                document.getElementById('loginScreen').style.display = 'flex';
+                document.getElementById('googleSignInBtn').style.display = 'block';
+                document.getElementById('usernameSetup').style.display = 'none';
+            }
+        });
+
+        // ===========================================
+        // 🔍 ПОИСК ПОЛЬЗОВАТЕЛЕЙ
+        // ===========================================
+        
+        function searchUsers(query) {
+             // Сначала очищаем список, оставляя только Глобальный чат
+             contactList.querySelectorAll('.search-result').forEach(el => el.remove());
+
+             const cleanQuery = query.toLowerCase().replace(/[@\s]/g, '');
+             
+             if (cleanQuery.length < 2) return;
+
+             // Запрос Firestore: поиск по имени пользователя (начинается с...)
+             db.collection('users')
+                .where('username', '>=', cleanQuery)
+                .where('username', '<=', cleanQuery + '\uf8ff') 
+                .limit(5)
+                .get()
+                .then(snapshot => {
+                    snapshot.forEach(doc => {
+                        const user = doc.data();
+                        
+                        if (user.uid === currentUser.uid) return; // Исключаем себя
+                        
+                        const item = document.createElement('div');
+                        item.className = 'contact-item search-result';
+                        item.onclick = (e) => {
+                            // Передаем UID (для чата) и username (для заголовка)
+                            startNewChat(user.uid, user.username, e.currentTarget);
+                        };
+                        item.innerHTML = `
+                            <div class="contact-item-info">
+                                <div class="contact-item-name">${user.displayName || 'Пользователь'}</div>
+                                <div class="contact-item-username">@${user.username}</div>
+                            </div>
+                        `;
+                        contactList.appendChild(item);
+                    });
+                })
+                .catch(error => {
+                    console.error("Ошибка поиска:", error);
+                });
+        }
+
+        // ===========================================
+        // 💬 ЛОГИКА ЧАТА
+        // ===========================================
+
+        function initializeChatApp() {
+            document.getElementById('loginScreen').style.display = 'none';
+            document.getElementById('chatApp').style.display = 'flex';
+            document.getElementById('myUsernameDisplay').textContent = `@${myUsername}`;
+            
+            // Запуск глобального чата по умолчанию
+            startNewChat('public_chat', 'Глобальный чат', document.getElementById('globalChatLink')); 
+        }
+        
+        function startNewChat(targetUidOrTag, targetUsername, element = null) {
+            document.getElementById('messageArea').innerHTML = '';
+            
+            if (unsubscribeFromChat) {
+                 unsubscribeFromChat(); // Останавливаем прослушивание старого чата
+            }
+
+            activeChatId = targetUidOrTag;
+            
+            document.getElementById('chatHeader').textContent = `Чат с @${targetUsername}`;
+            document.getElementById('chatInputArea').style.display = 'flex';
+            document.getElementById('messageInput').focus();
+
+            // Выделение активного элемента
+            document.querySelectorAll('.contact-item').forEach(el => el.classList.remove('active'));
+            if (element) {
+                element.classList.add('active');
+            }
+
+
+            // Запускаем прослушивание нового чата
+            listenForChatMessages(targetUidOrTag);
+        }
+
+        function getChatCollectionRef(chatId) {
+             // Для личных сообщений формируем уникальный ID чата путем сортировки UID
+             if (chatId !== 'public_chat') {
+                 const uids = [currentUser.uid, chatId].sort();
+                 chatId = uids[0] + "_" + uids[1];
+             }
+             return db.collection('chats').doc(chatId).collection('messages');
+        }
+
+        function listenForChatMessages(chatId) {
+             const messagesRef = getChatCollectionRef(chatId);
+             
+             // Прослушивание в реальном времени с сортировкой по времени
+             unsubscribeFromChat = messagesRef.orderBy('timestamp').limit(50).onSnapshot(snapshot => {
+                 document.getElementById('messageArea').innerHTML = ''; 
+                 
+                 snapshot.forEach(doc => {
+                     appendMessageToUI(doc.data());
+                 });
+                 
+                 // Прокрутка вниз
+                 document.getElementById('messageArea').scrollTop = document.getElementById('messageArea').scrollHeight;
+             }, error => {
+                 console.error("Ошибка прослушивания чата:", error);
+             });
+        }
+
+        function sendMessage() {
+            if (!activeChatId) return;
+
+            const input = document.getElementById('messageInput');
+            const messageText = input.value.trim();
+
+            if (messageText === "") return;
+
+            const message = {
+                sender: myUsername,
+                text: messageText,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            };
+
+            const messagesRef = getChatCollectionRef(activeChatId);
+            
+            // Добавление сообщения в базу
+            messagesRef.add(message)
+                .then(() => {
+                    input.value = ''; 
+                })
+                .catch(error => {
+                    console.error("Ошибка при отправке: ", error);
+                    showCustomAlert("Ошибка отправки: " + error.message);
+                });
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        // ===========================================
+        // UI РЕНДЕРИНГ
+        // ===========================================
+
+        function appendMessageToUI(message) {
+            const messageArea = document.getElementById('messageArea');
+            const msgElement = document.createElement('div');
+            
+            const isUser = message.sender === myUsername;
+            msgElement.className = `message ${isUser ? 'msg-user' : 'msg-other'}`;
+
+            // Форматирование времени
+            let timeStr = '';
+            if (message.timestamp && message.timestamp.toDate) {
+                 timeStr = message.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            } else {
+                 timeStr = '...'; 
+            }
+
+
+            if (!isUser && activeChatId === 'public_chat') {
+                 // В глобальном чате показываем имя отправителя
+                 const senderSpan = document.createElement('div');
+                 senderSpan.className = 'msg-sender';
+                 senderSpan.textContent = `@${message.sender}`;
+                 msgElement.appendChild(senderSpan);
+            }
+            
+            const textContent = document.createTextNode(message.text);
+            msgElement.appendChild(textContent);
+
+            const timeSpan = document.createElement('span');
+            timeSpan.className = 'msg-time';
+            timeSpan.textContent = timeStr;
+            msgElement.appendChild(timeSpan);
+
+            messageArea.appendChild(msgElement);
+        }
+        
+        // Заглушка для alert()
+        function showCustomAlert(message) {
+            console.warn("Внимание:", message);
+            // Здесь должна быть ваша собственная модальная реализация
+            // Для этой версии мы просто используем консоль.
+        }
+    </script>
+</body>
+</html>
+
